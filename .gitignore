@@ -1,0 +1,23 @@
+# Node / project
+node_modules/
+dist/
+build/
+.vscode/
+.DS_Store
+
+# Secrets and DBs (CRITICAL)
+.env
+.env.*.local
+client_secret*.json
+uploads/
+*.sqlite
+opportunityhub.db
+
+# Logs
+npm-debug.log*
+yarn-error.log*
+
+# Package managers
+pnpm-lock.yaml
+package-lock.json
+yarn.lock

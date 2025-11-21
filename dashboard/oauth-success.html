@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>OAuth Success</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: system-ui, sans-serif; background:#f8fafc; color:#0f172a; display:flex; align-items:center; justify-content:center; height:100vh; margin:0; }
+    .card { background:white; padding:20px 24px; border-radius:8px; box-shadow:0 6px 20px rgba(2,6,23,0.08); max-width:520px; width:100%; text-align:center; }
+    .success { color:#059669; font-weight:600; margin-bottom:8px; }
+    .muted { color:#6b7280; font-size:13px; margin-top:8px; }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="success">Authentication complete</div>
+    <div id="msg">Saving session and closing window…</div>
+    <div class="muted">If this window doesn't close automatically, copy the sessionId from the page and paste it back into the app.</div>
+  </div>
+
+ <script>
+  (function () {
+    function qs(key) {
+      const params = new URLSearchParams(window.location.search);
+      return params.get(key);
+    }
+
+    try {
+      const sessionId = qs('sessionId');
+      const driveAuth = qs('drive_auth');
+
+      if (sessionId) {
+        try { localStorage.setItem('googleDriveSession', sessionId); } catch(e){}
+
+        if (window.opener && !window.opener.closed) {
+          try {
+            window.opener.postMessage({ type: 'OPPORTUNITYHUB_OAUTH', sessionId }, window.location.origin);
+          } catch (e) {
+            try { window.opener.postMessage({ type: 'OPPORTUNITYHUB_OAUTH', sessionId }, '*'); } catch (e2) {}
+          }
+        }
+        document.getElementById('msg').innerText = 'Session saved — closing window...';
+      } else if (driveAuth === 'success') {
+        // fallback for simple redirect ?drive_auth=success
+        if (window.opener && !window.opener.closed) {
+          try {
+            window.opener.postMessage({ drive_auth: 'success' }, window.location.origin);
+          } catch (e) {
+            try { window.opener.postMessage({ drive_auth: 'success' }, '*'); } catch (e2) {}
+          }
+        }
+        document.getElementById('msg').innerText = 'Authentication complete — closing window...';
+      } else {
+        document.getElementById('msg').innerText = 'Session ID not found in URL.';
+      }
+
+      setTimeout(() => { try { window.close(); } catch (e) {} }, 800);
+    } catch (err) {
+      console.error(err);
+      document.getElementById('msg').innerText = 'An error occurred. See console for details.';
+    }
+  })();
+</script>
+
+</body>
+</html>

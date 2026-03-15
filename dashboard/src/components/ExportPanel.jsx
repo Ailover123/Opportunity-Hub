@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Download, FileText, Calendar, CheckCircle, AlertCircle, Cloud } from 'lucide-react';
+import ApiService from '../services/api';
+import { useToast } from '../context/ToastContext';
 
 const ExportPanel = ({ userId }) => {
+  const { success, error: showError } = useToast();
   const [selectedCategories, setSelectedCategories] = useState(['hackathon', 'job', 'competition', 'certification']);
   const [format, setFormat] = useState('csv');
   const [uploadToDrive, setUploadToDrive] = useState(false);
@@ -21,8 +24,7 @@ const ExportPanel = ({ userId }) => {
 
   const loadExportHistory = async () => {
     try {
-      const response = await fetch(`http://localhost:3001/api/exports/${userId}`);
-      const data = await response.json();
+      const data = await ApiService.getExportHistory(userId);
       setExportHistory(data);
     } catch (error) {
       console.error('Failed to load export history:', error);
@@ -39,7 +41,7 @@ const ExportPanel = ({ userId }) => {
 
   const exportData = async () => {
     if (selectedCategories.length === 0) {
-      alert('Please select at least one category to export');
+      showError('Please select at least one category to export');
       return;
     }
 
@@ -48,30 +50,16 @@ const ExportPanel = ({ userId }) => {
     try {
       const sessionId = localStorage.getItem('googleDriveSession');
 
-      const response = await fetch(`http://localhost:3001/api/export/${userId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          categories: selectedCategories,
-          format,
-          uploadToDrive: uploadToDrive && sessionId,
-          sessionId: sessionId
-        }),
+      const result = await ApiService.exportData(userId, {
+        categories: selectedCategories,
+        format,
+        uploadToDrive: uploadToDrive && sessionId,
+        sessionId: sessionId
       });
-
-      const result = await response.json();
 
       if (result.success) {
         // Download the file
-        const downloadUrl = `http://localhost:3001${result.downloadUrl}`;
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        link.download = result.filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        ApiService.downloadFile(result.filename);
 
         // Show success message
         let message = `Successfully exported ${result.items} items to ${result.filename}`;
@@ -79,16 +67,16 @@ const ExportPanel = ({ userId }) => {
           message += ' and uploaded to Google Drive';
         }
 
-        alert(message);
+        success(message);
 
         // Refresh export history
         loadExportHistory();
       } else {
-        alert(result.error || 'Export failed');
+        showError(result.error || 'Export failed');
       }
     } catch (error) {
       console.error('Export failed:', error);
-      alert('Export failed. Please try again.');
+      showError('Export failed. Please try again.');
     } finally {
       setIsExporting(false);
     }

@@ -72,6 +72,18 @@ router.get('/auth/google/callback', async (req, res) => {
   }
 });
 
+// Alias for generic /auth/callback (often used in Google Console config)
+router.get('/auth/callback', async (req, res) => {
+  // Reuse the same logic by redirecting internally or invoking a shared function. 
+  // For simplicity, we'll just redirect to the canonical handler or copy logic.
+  // Since we accept req, res, let's just use the same handler logic.
+  // Actually, we can reuse the handler if we extract it, but let's just forward for now
+  // OR better, just map this route to the same function if I extracted it. 
+  // Since I can't easily extract without larger refactor, I will just internally route.
+  req.url = '/auth/google/callback';
+  router.handle(req, res);
+});
+
 /**
  * GET /auth/status/:sessionId
  * Check authentication status for a session

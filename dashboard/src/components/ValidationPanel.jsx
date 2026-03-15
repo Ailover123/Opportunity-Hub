@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { getAllMockData } from '../data/mockCollectedData';
+import React, { useState, useEffect } from 'react';
+import ApiService from '../services/api';
 
-const ValidationPanel = () => {
+const ValidationPanel = ({ userId }) => {
   const [validationRules, setValidationRules] = useState({
     duplicateCheck: true,
     urlValidation: true,
@@ -10,14 +10,100 @@ const ValidationPanel = () => {
     sourceReliability: true
   });
 
-  const [validationResults, setValidationResults] = useState([
-    { id: 1, type: 'duplicate', message: 'Duplicate entry found: "AI Innovation Challenge 2024"', severity: 'warning', resolved: false },
-    { id: 2, type: 'url', message: 'Invalid URL detected in job posting', severity: 'error', resolved: true },
-    { id: 3, type: 'date', message: 'Deadline date is in the past for hackathon entry', severity: 'warning', resolved: false },
-    { id: 4, type: 'content', message: 'Low quality content detected - missing description', severity: 'info', resolved: false },
-  ]);
+  const [validationResults, setValidationResults] = useState([]);
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const data = getAllMockData();
+  useEffect(() => {
+    loadDataAndValidate();
+  }, [userId]);
+
+  const loadDataAndValidate = async () => {
+    try {
+      setLoading(true);
+      const items = await ApiService.getCollectedData(userId);
+      setData(items);
+      runValidation(items);
+    } catch (error) {
+      console.error('Validation fetch error', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const runValidation = (items) => {
+    const results = [];
+    let idCounter = 1;
+
+    // 1. Duplicate Check
+    if (validationRules.duplicateCheck) {
+      const urlMap = new Map();
+      items.forEach(item => {
+        if (urlMap.has(item.url)) {
+          results.push({
+            id: idCounter++,
+            type: 'duplicate',
+            message: `Duplicate entry found: "${item.title}"`,
+            severity: 'warning',
+            resolved: false
+          });
+        } else {
+          urlMap.set(item.url, true);
+        }
+      });
+    }
+
+    // 2. URL Validation
+    if (validationRules.urlValidation) {
+      items.forEach(item => {
+        if (!item.url || !item.url.startsWith('http')) {
+          results.push({
+            id: idCounter++,
+            type: 'url',
+            message: `Invalid URL for: "${item.title}"`,
+            severity: 'error',
+            resolved: false
+          });
+        }
+      });
+    }
+
+    // 3. Date Validation (Deadlines)
+    if (validationRules.dateValidation) {
+      const now = new Date();
+      items.forEach(item => {
+        if (item.deadline && item.deadline !== 'Flexible' && item.deadline !== 'See details') {
+          const deadlineDate = new Date(item.deadline);
+          if (!isNaN(deadlineDate) && deadlineDate < now) {
+            results.push({
+              id: idCounter++,
+              type: 'date',
+              message: `Deadline passed for: "${item.title}"`,
+              severity: 'warning',
+              resolved: false
+            });
+          }
+        }
+      });
+    }
+
+    // 4. Content Quality
+    if (validationRules.contentQuality) {
+      items.forEach(item => {
+        if (!item.description || item.description.length < 10) {
+          results.push({
+            id: idCounter++,
+            type: 'content',
+            message: `Low quality description for: "${item.title}"`,
+            severity: 'info',
+            resolved: false
+          });
+        }
+      });
+    }
+
+    setValidationResults(results);
+  };
   const stats = {
     total: data.length,
     verified: data.filter(item => item.status === 'verified').length,
@@ -60,12 +146,19 @@ const ValidationPanel = () => {
     }
   };
 
+
+
+  if (loading) return <div className="p-6">Loading data for validation...</div>;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900">Data Validation & Quality Control</h2>
         <div className="flex space-x-2">
-          <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+          <button
+            onClick={() => runValidation(data)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+          >
             🔍 Run Full Validation
           </button>
           <button className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">

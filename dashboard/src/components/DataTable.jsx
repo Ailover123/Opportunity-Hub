@@ -1,12 +1,31 @@
-import React, { useState } from 'react';
-import { getAllMockData } from '../data/mockCollectedData';
+import React, { useState, useEffect } from 'react';
+import ApiService from '../services/api';
 
-const DataTable = () => {
-  const [data, setData] = useState(getAllMockData());
+const DataTable = ({ userId }) => {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('collected_at');
   const [sortOrder, setSortOrder] = useState('desc');
+
+  useEffect(() => {
+    if (userId) {
+      fetchData();
+    }
+  }, [userId]);
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const result = await ApiService.getCollectedData(userId);
+      setData(result.items || []);
+    } catch (error) {
+      console.error('Failed to fetch data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filteredData = data
     .filter(item => filter === 'all' || item.category === filter)
@@ -180,9 +199,9 @@ const DataTable = () => {
                   </td>
                   <td className="px-6 py-4">
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${item.category === 'hackathon' ? 'bg-purple-100 text-purple-800' :
-                        item.category === 'job' ? 'bg-blue-100 text-blue-800' :
-                          item.category === 'competition' ? 'bg-green-100 text-green-800' :
-                            'bg-yellow-100 text-yellow-800'
+                      item.category === 'job' ? 'bg-blue-100 text-blue-800' :
+                        item.category === 'competition' ? 'bg-green-100 text-green-800' :
+                          'bg-yellow-100 text-yellow-800'
                       }`}>
                       {item.category}
                     </span>

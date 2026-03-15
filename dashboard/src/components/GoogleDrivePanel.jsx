@@ -41,7 +41,7 @@ const GoogleDrivePanel = ({ userId }) => {
       setLoading(true);
       setError(null);
 
-      const response = await fetch('http://localhost:3001/auth/google');
+      const response = await fetch('http://localhost:3001/api/auth/google');
       const data = await response.json();
 
       if (data.authUrl) {
@@ -90,7 +90,7 @@ const GoogleDrivePanel = ({ userId }) => {
   const disconnect = async () => {
     try {
       if (sessionId) {
-        await fetch(`http://localhost:3001/auth/disconnect/${sessionId}`, {
+        await fetch(`http://localhost:3001/api/auth/disconnect/${sessionId}`, {
           method: 'POST'
         });
       }

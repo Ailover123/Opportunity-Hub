@@ -11,12 +11,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/auth': {
+      '/api': {
         target: 'http://localhost:3001',
         changeOrigin: true,
         secure: false
       },
-      '/drive': {
+      '/auth': {
         target: 'http://localhost:3001',
         changeOrigin: true,
         secure: false

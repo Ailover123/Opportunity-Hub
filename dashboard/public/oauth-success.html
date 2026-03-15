@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Authentication Successful</title>
+</head>
+<body>
+  <h1>Authentication Successful</h1>
+  <p>You can close this window now.</p>
+  <script>
+    // Parse query parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get('sessionId');
+
+    if (sessionId) {
+      // Save session ID to local storage
+      localStorage.setItem('googleDriveSession', sessionId);
+      
+      // Notify opener
+      if (window.opener) {
+        window.opener.postMessage({ type: 'AUTH_SUCCESS', sessionId }, '*');
+      }
+      
+      // Close window
+      window.close();
+    } else {
+      document.body.innerHTML = '<h1>Authentication Failed</h1><p>No session ID received.</p>';
+    }
+  </script>
+</body>
+</html>

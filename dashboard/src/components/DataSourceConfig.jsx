@@ -1,39 +1,89 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import ApiService from '../services/api';
+import { useToast } from '../context/ToastContext';
 
-const DataSourceConfig = () => {
-  const [sources, setSources] = useState([
-    { id: 1, name: 'DevPost Hackathons', url: 'https://devpost.com/hackathons', type: 'hackathon', active: true },
-    { id: 2, name: 'AngelList Jobs', url: 'https://angel.co/jobs', type: 'job', active: true },
-    { id: 3, name: 'Kaggle Competitions', url: 'https://kaggle.com/competitions', type: 'competition', active: true },
-    { id: 4, name: 'Coursera Free Courses', url: 'https://coursera.org/courses', type: 'certification', active: false },
-  ]);
-
+const DataSourceConfig = ({ userId }) => {
+  const { success, error: showError } = useToast();
+  const [sources, setSources] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [newSource, setNewSource] = useState({
     name: '',
     url: '',
     type: 'hackathon'
   });
 
-  const handleAddSource = () => {
-    if (newSource.name && newSource.url) {
-      setSources([...sources, {
-        id: Date.now(),
-        ...newSource,
-        active: true
-      }]);
-      setNewSource({ name: '', url: '', type: 'hackathon' });
+  useEffect(() => {
+    if (userId) {
+      loadSources();
+    }
+  }, [userId]);
+
+  const loadSources = async () => {
+    try {
+      setLoading(true);
+      const data = await ApiService.getDataSources(userId);
+      setSources(data);
+    } catch (error) {
+      console.error('Failed to load sources:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const toggleSource = (id) => {
-    setSources(sources.map(source =>
-      source.id === id ? { ...source, active: !source.active } : source
-    ));
+  const handleAddSource = async () => {
+    if (newSource.name && newSource.url) {
+      try {
+        const sourceToAdd = {
+          ...newSource,
+          active: true
+        };
+        // Optimistic update or wait for reload? Let's reload to be safe or append if API returns id
+        await ApiService.addDataSource(userId, sourceToAdd);
+        setNewSource({ name: '', url: '', type: 'hackathon' });
+        loadSources();
+        success('Source added successfully');
+      } catch (error) {
+        console.error('Failed to add source:', error);
+        showError('Failed to add source');
+      }
+    }
   };
 
-  const removeSource = (id) => {
-    setSources(sources.filter(source => source.id !== id));
+  const toggleSource = async (id) => {
+    const source = sources.find(s => s.id === id);
+    if (!source) return;
+
+    // Optimistic update
+    const newActiveState = !source.active;
+    setSources(sources.map(s => s.id === id ? { ...s, active: newActiveState } : s));
+
+    try {
+      await ApiService.toggleDataSource(userId, id, newActiveState);
+    } catch (e) {
+      console.error('Failed to toggle source:', e);
+      // Revert
+      setSources(sources.map(s => s.id === id ? { ...s, active: source.active } : s));
+      showError('Failed to update source');
+    }
   };
+
+  const removeSource = async (id) => {
+    if (!window.confirm('Remove this source?')) return;
+
+    const oldSources = [...sources];
+    setSources(sources.filter(source => source.id !== id));
+
+    try {
+      await ApiService.deleteDataSource(userId, id);
+      success('Source removed');
+    } catch (e) {
+      console.error(e);
+      setSources(oldSources);
+      showError('Failed to remove source');
+    }
+  };
+
+  if (loading) return <div className="p-6">Loading sources...</div>;
 
   return (
     <div className="space-y-6">
@@ -95,9 +145,9 @@ const DataSourceConfig = () => {
                   <h4 className="font-medium text-gray-900">{source.name}</h4>
                   <p className="text-sm text-gray-500">{source.url}</p>
                   <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium mt-1 ${source.type === 'hackathon' ? 'bg-purple-100 text-purple-800' :
-                      source.type === 'job' ? 'bg-blue-100 text-blue-800' :
-                        source.type === 'competition' ? 'bg-green-100 text-green-800' :
-                          'bg-yellow-100 text-yellow-800'
+                    source.type === 'job' ? 'bg-blue-100 text-blue-800' :
+                      source.type === 'competition' ? 'bg-green-100 text-green-800' :
+                        'bg-yellow-100 text-yellow-800'
                     }`}>
                     {source.type}
                   </span>
@@ -107,8 +157,8 @@ const DataSourceConfig = () => {
                 <button
                   onClick={() => toggleSource(source.id)}
                   className={`px-3 py-1 rounded text-sm font-medium transition-colors ${source.active
-                      ? 'bg-red-100 text-red-800 hover:bg-red-200'
-                      : 'bg-green-100 text-green-800 hover:bg-green-200'
+                    ? 'bg-red-100 text-red-800 hover:bg-red-200'
+                    : 'bg-green-100 text-green-800 hover:bg-green-200'
                     }`}
                 >
                   {source.active ? 'Disable' : 'Enable'}

@@ -19,45 +19,59 @@ class IndeedScraper {
   async scrapeJobs() {
     try {
       if (!this.page) await this.init();
-      
+
       console.log('Scraping Indeed jobs...');
-      await this.page.goto(this.baseUrl, { waitUntil: 'networkidle2', timeout: 30000 });
-      
-      // Wait for job cards to load
-      await this.page.waitForSelector('[data-testid="job-result"]', { timeout: 10000 });
-      
+      // Indeed is very bot-sensitive. We need to be careful.
+      await this.page.goto(this.baseUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+      // Wait for job cards - Increased timeout
+      try {
+        await this.page.waitForSelector('.job_seen_beacon, [data-testid="job-result"]', { timeout: 20000 });
+      } catch (e) {
+        console.log("Could not find standard Indeed selector. They might have rotated class names.");
+      }
+
       const jobs = await this.page.evaluate(() => {
-        const jobCards = document.querySelectorAll('[data-testid="job-result"]');
+        // Try multiple potential selectors for indeed job cards
+        const jobCards = document.querySelectorAll('.job_seen_beacon, [data-testid="job-result"], tr.jobtable');
         const results = [];
-        
+
         jobCards.forEach((card, index) => {
-          if (index >= 8) return; // Limit to 8 results
-          
-          const titleElement = card.querySelector('[data-testid="job-title"] a');
-          const companyElement = card.querySelector('[data-testid="company-name"]');
-          const locationElement = card.querySelector('[data-testid="job-location"]');
-          const salaryElement = card.querySelector('[data-testid="salary-snippet"]');
-          const summaryElement = card.querySelector('[data-testid="job-snippet"]');
-          
-          if (titleElement) {
+          if (index >= 8) return;
+
+          // Try to find title
+          let titleEl = card.querySelector('h2.jobTitle span, .jobTitle a');
+          // Try to find company
+          let companyEl = card.querySelector('[data-testid="company-name"], .companyName');
+
+          if (titleEl) {
+            const title = titleEl.textContent.trim();
+            const company = companyEl ? companyEl.textContent.trim() : 'Indeed Listing';
+            // URL is often on the `a` tag up the tree or inside the h2
+            const urlAnchor = card.closest('a') || card.querySelector('a');
+            let url = urlAnchor ? urlAnchor.getAttribute('href') : '';
+            if (url && !url.startsWith('http')) url = 'https://www.indeed.com' + url;
+
             results.push({
-              title: titleElement.textContent.trim(),
-              organization: companyElement ? companyElement.textContent.trim() : 'Unknown Company',
-              url: 'https://www.indeed.com' + titleElement.getAttribute('href'),
-              prize: salaryElement ? salaryElement.textContent.trim() : null,
+              title: title,
+              organization: company,
+              url: url || 'https://www.indeed.com',
+              prize: 'Job Salary',
               deadline: null,
-              location: locationElement ? locationElement.textContent.trim() : 'Remote',
-              description: summaryElement ? summaryElement.textContent.trim() : `${titleElement.textContent.trim()} position`
+              location: 'Remote',
+              description: `${title} at ${company}`,
+              status: 'pending',
+              quality_score: 70
             });
           }
         });
-        
+
         return results;
       });
-      
+
       console.log(`Found ${jobs.length} jobs on Indeed`);
       return jobs;
-      
+
     } catch (error) {
       console.error('Indeed scraping error:', error.message);
       return [];

@@ -1,16 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import StatsCard from './StatsCard';
 import ApiService from '../services/api';
+import { useToast } from '../context/ToastContext';
+import AreaChartComponent from './charts/AreaChart';
+import BarChartComponent from './charts/BarChart';
+import PieChartComponent from './charts/PieChart';
 
-const DataDashboard = () => {
+const DataDashboard = ({ userId, setActiveView, collecting, setCollecting }) => {
+  const { success, error: showError } = useToast();
   const [stats, setStats] = useState({
     total: 0,
     verified: 0,
     pending: 0,
-    categories: {}
+    categories: {},
+    charts: { area: [], bar: [], pie: [] }
   });
   const [loading, setLoading] = useState(true);
-  const [collecting, setCollecting] = useState(false);
+  const [keywords, setKeywords] = useState('');
 
   useEffect(() => {
     loadDashboardData();
@@ -19,21 +25,14 @@ const DataDashboard = () => {
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      const data = await ApiService.getDashboardStats();
+      const data = await ApiService.getDashboardStats(userId);
       setStats(data);
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
-      // Fallback to mock data
+      showError('Failed to load dashboard data');
       setStats({
-        total: 7,
-        verified: 5,
-        pending: 2,
-        categories: {
-          hackathon: 2,
-          job: 2,
-          competition: 1,
-          certification: 2
-        }
+        total: 0, verified: 0, pending: 0, categories: {},
+        charts: { area: [], bar: [], pie: [] }
       });
     } finally {
       setLoading(false);
@@ -42,78 +41,104 @@ const DataDashboard = () => {
 
   const handleRunCollection = async () => {
     try {
+      if (!keywords.trim()) {
+        showError('Please enter at least one keyword');
+        return;
+      }
       setCollecting(true);
-      const result = await ApiService.runDataCollection();
-
-      // Show success message
-      alert(`Collection completed! Collected ${result.collected} new items, ${result.verified} verified.`);
-
-      // Refresh dashboard data
-      await loadDashboardData();
+      // Start collection
+      await ApiService.runDataCollection(userId, { keywords: keywords });
+      success('Collection started! Monitoring progress...');
     } catch (error) {
-      console.error('Collection failed:', error);
-      alert('Data collection failed. Please try again.');
-    } finally {
-      setCollecting(false);
+      console.error('Collection failed to start:', error);
+      showError('Data collection failed to start.');
+      setCollecting(false); // Stop if start failed
     }
   };
 
+  // Poll for logs
+  useEffect(() => {
+    let interval;
+    if (collecting) {
+      interval = setInterval(async () => {
+        try {
+          const status = await ApiService.getCollectionStatus(userId);
+          setLogs(status.logs || []);
+          if (status.status === 'completed' || status.status === 'failed') {
+            setCollecting(false);
+            if (status.status === 'completed') success(`Collection finished! Collected ${status.collected} new items.`);
+            else showError('Collection failed check logs.');
+            loadDashboardData();
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }, 2000);
+    }
+    return () => clearInterval(interval);
+  }, [collecting, userId]);
+
+  const [logs, setLogs] = useState([]);
+
   const handleExportAll = async () => {
     try {
-      const result = await ApiService.exportData({
+      const result = await ApiService.exportData(userId, {
         categories: ['hackathon', 'job', 'competition', 'certification'],
         format: 'csv'
       });
 
       if (result.success) {
-        alert(`Export completed! ${result.items} items exported.`);
+        success(`Export completed! ${result.items} items exported.`);
         // Auto-download the file
         ApiService.downloadFile(result.filename);
       }
     } catch (error) {
       console.error('Export failed:', error);
-      alert('Export failed. Please try again.');
+      showError('Export failed. Please try again.');
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading dashboard...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Data Collection Dashboard</h2>
-        <div className="flex space-x-2">
+      <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Data Collection Dashboard</h2>
+          <p className="text-gray-500 text-sm">Real-time opportunity scraping</p>
+        </div>
+
+        <div className="flex flex-1 max-w-xl space-x-2 w-full">
+          <input
+            type="text"
+            value={keywords}
+            onChange={(e) => setKeywords(e.target.value)}
+            placeholder="Enter keywords..."
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+          />
           <button
             onClick={handleRunCollection}
             disabled={collecting}
-            className={`px-4 py-2 rounded-lg transition-colors ${collecting
-                ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-blue-600 hover:bg-blue-700'
+            className={`px-4 py-2 rounded-lg transition-colors whitespace-nowrap flex items-center ${collecting
+              ? 'bg-gray-400 cursor-not-allowed'
+              : 'bg-blue-600 hover:bg-blue-700'
               } text-white`}
           >
             {collecting ? (
               <>
                 <span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></span>
-                Running...
+                Scraping...
               </>
             ) : (
-              '🔄 Run Collection Now'
+              '🚀 Start Scraping'
             )}
           </button>
+        </div>
+
+        <div>
           <button
             onClick={handleExportAll}
             className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
           >
-            📤 Export All Data
+            📤 Export
           </button>
         </div>
       </div>
@@ -148,6 +173,18 @@ const DataDashboard = () => {
           trend="+15%"
           trendUp={true}
         />
+      </div>
+
+      {/* Charts Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Collection Activity (7 Days)</h3>
+          <AreaChartComponent data={stats.charts?.area || []} />
+        </div>
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Quality Distribution</h3>
+          <PieChartComponent data={stats.charts?.pie || []} />
+        </div>
       </div>
 
       {/* Collection Status */}
@@ -199,23 +236,40 @@ const DataDashboard = () => {
                 <p className="text-xs text-gray-500">Ready for collection</p>
               </div>
             </div>
-            <div className="flex items-center space-x-3 p-2 bg-yellow-50 rounded">
-              <span className="text-yellow-600">⚠️</span>
+            <div className={`flex items-center space-x-3 p-2 rounded ${localStorage.getItem('googleDriveSession') ? 'bg-green-50' : 'bg-yellow-50'}`}>
+              <span className={localStorage.getItem('googleDriveSession') ? 'text-green-600' : 'text-yellow-600'}>
+                {localStorage.getItem('googleDriveSession') ? '✅' : '⚠️'}
+              </span>
               <div className="flex-1">
                 <p className="text-sm font-medium">Google Drive integration</p>
-                <p className="text-xs text-gray-500">Simulated mode active</p>
+                <p className="text-xs text-gray-500">
+                  {localStorage.getItem('googleDriveSession') ? 'Connected & Ready' : 'Not setup / Disconnected'}
+                </p>
               </div>
             </div>
           </div>
         </div>
       </div>
 
+      {/* Live Logs Section */}
+      {logs.length > 0 && (
+        <div className="bg-black text-green-400 p-4 rounded-lg shadow-sm font-mono text-sm h-64 overflow-y-auto">
+          <h3 className="text-white font-bold mb-2 border-b border-gray-700 pb-1">⚡ Live Collection Logs</h3>
+          <div className="space-y-1">
+            {logs.map((log, i) => (
+              <div key={i}>{log}</div>
+            ))}
+            {collecting && <div className="animate-pulse">_</div>}
+          </div>
+        </div>
+      )}
+
       {/* Quick Actions */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <button
-            onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'sources' }))}
+            onClick={() => setActiveView('sources')}
             className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left"
           >
             <div className="text-2xl mb-2">⚙️</div>
@@ -223,7 +277,7 @@ const DataDashboard = () => {
             <p className="text-sm text-gray-600">Set up data collection sources</p>
           </button>
           <button
-            onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'scheduler' }))}
+            onClick={() => setActiveView('schedule')}
             className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left"
           >
             <div className="text-2xl mb-2">📅</div>
@@ -231,7 +285,7 @@ const DataDashboard = () => {
             <p className="text-sm text-gray-600">Set collection frequency</p>
           </button>
           <button
-            onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'data' }))}
+            onClick={() => setActiveView('data')}
             className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left"
           >
             <div className="text-2xl mb-2">📊</div>

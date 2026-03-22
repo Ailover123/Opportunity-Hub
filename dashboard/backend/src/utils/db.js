@@ -61,18 +61,21 @@ const initDB = async () => {
             google_drive_refresh_token TEXT,
             bio TEXT,
             skills TEXT,
-            github_url VARCHAR(255),
             avatar_url VARCHAR(255),
-            last_sync_at DATETIME,
+            last_sync_at DATETIME NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )`);
 
         // Migration: Add last_sync_at if it's missing (for existing MySQL databases)
+        // We explicitly check for existence to avoid unnecessary errors in logs
         try {
-            await db.execute(`ALTER TABLE users ADD COLUMN last_sync_at DATETIME`);
-            console.log('✔ Migrated: Added last_sync_at to users table');
+            const columns = await db.all(`SHOW COLUMNS FROM users LIKE 'last_sync_at'`);
+            if (columns.length === 0) {
+                await db.execute(`ALTER TABLE users ADD COLUMN last_sync_at DATETIME NULL AFTER avatar_url`);
+                console.log('✔ Migrated: Added last_sync_at to users table');
+            }
         } catch (err) {
-            // Silence error if column already exists
+            console.warn('⚠ Migration Check Warning:', err.message);
         }
 
         // Opportunities

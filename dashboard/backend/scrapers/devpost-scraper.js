@@ -51,13 +51,14 @@ class DevpostScraper {
       const seenTitles = new Set();
       
       // Look for hackathon tiles or any h3/a with hackathon keywords
-      $('.hackathon-tile, article, div[class*="HackathonTile"], h3').each((i, el) => {
+      // Updated selectors for 2026 Devpost structure
+      $('.hackathon-tile, .featured-hackathon-tile, article, div[class*="tile"], h3').each((i, el) => {
         const $el = $(el);
-        const titleEl = $el.find('h3, h4, a[href*="devpost.com/hackathons/"]').first();
+        const titleEl = $el.find('h3, h4, .hackathon-tile-title, a[href*="devpost.com/hackathons/"]').first();
         const text = titleEl.text().trim() || $el.text().trim().split('\n')[0];
         const href = titleEl.attr('href') || $el.find('a').attr('href');
         
-        if (text && text.length > 5 && !seenTitles.has(text) && !text.includes('Sign In')) {
+        if (text && text.length > 3 && !seenTitles.has(text) && !text.includes('Sign In')) {
           seenTitles.add(text);
           // Location extraction
           let location = 'Online';

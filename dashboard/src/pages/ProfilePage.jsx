@@ -4,7 +4,10 @@ import { User, Mail, Github, Award, Save, RefreshCw, Camera, AlertCircle, CheckC
 import axios from '../utils/api';
 import { useNotification } from '../context/NotificationContext';
 
-
+// Modular Components
+import ProfileField from '../features/profile/components/ProfileField';
+import AvatarSection from '../features/profile/components/AvatarSection';
+import SecuritySection from '../features/profile/components/SecuritySection';
 
 const ProfilePage = () => {
     const { user, checkAuth } = useUser();
@@ -94,38 +97,12 @@ const ProfilePage = () => {
 
             <div className="content-body" style={{ maxWidth: '800px' }}>
                 <div className="card">
-                    {/* Avatar Section */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', marginBottom: '2.5rem', padding: '0.5rem' }}>
-                        <div style={{ position: 'relative' }}>
-                            <div style={{
-                                width: 100, height: 100, borderRadius: '50%',
-                                background: 'var(--bg-app)', border: '2px solid var(--border-light)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                overflow: 'hidden'
-                            }}>
-                                {formData.avatar_url ? (
-                                    <img src={formData.avatar_url} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                ) : (
-                                    <User size={48} color="var(--text-secondary)" />
-                                )}
-                            </div>
-                            {isEditing && (
-                                <button type="button" style={{
-                                    position: 'absolute', bottom: 0, right: 0,
-                                    width: 32, height: 32, borderRadius: '50%',
-                                    background: 'white', border: '1px solid var(--border-light)',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    cursor: 'pointer'
-                                }}>
-                                    <Camera size={16} color="var(--primary)" />
-                                </button>
-                            )}
-                        </div>
-                        <div>
-                            <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '0.25rem' }}>{formData.name || 'Anonymous User'}</h3>
-                            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{user?.email}</p>
-                        </div>
-                    </div>
+                    <AvatarSection 
+                        avatarUrl={formData.avatar_url} 
+                        name={formData.name} 
+                        email={user?.email} 
+                        isEditing={isEditing} 
+                    />
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                         <ProfileField
@@ -140,7 +117,7 @@ const ProfilePage = () => {
                         <ProfileField
                             label="Email Address"
                             value={user?.email}
-                            editing={false} // Always read-only
+                            editing={false}
                             placeholder="Email address"
                             icon={<Mail size={16} />}
                         />
@@ -197,48 +174,11 @@ const ProfilePage = () => {
                 )}
 
                 {!isEditing && (
-                    <div className="card" style={{ marginTop: '2rem', borderLeft: '4px solid var(--primary)' }}>
-                        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <AlertCircle size={18} color="var(--primary)" /> Security & Authentication
-                        </h3>
-                        <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-                            Your account is secured with standard encryption. Password resets will be sent to your primary email address.
-                        </p>
-                        <button
-                            className="btn btn-outline"
-                            onClick={() => addNotification('Encrypted reset link dispatched!', 'success')}
-                        >
-                            <RefreshCw size={14} /> Reset Password
-                        </button>
-                    </div>
+                    <SecuritySection onResetPassword={() => addNotification('Encrypted reset link dispatched!', 'success')} />
                 )}
             </div>
         </div>
     );
 };
-
-const ProfileField = ({ label, value, editing, onChange, placeholder, icon }) => (
-    <div style={{ flex: 1 }}>
-        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: '#94a3b8', marginBottom: '0.75rem' }}>{label}</label>
-        {editing ? (
-            <div style={{ position: 'relative' }}>
-                <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }}>{icon}</div>
-                <input
-                    type="text"
-                    className="btn btn-outline"
-                    style={{ width: '100%', paddingLeft: '2.5rem', textAlign: 'left', cursor: 'text' }}
-                    value={value}
-                    onChange={(e) => onChange(e.target.value)}
-                    placeholder={placeholder}
-                />
-            </div>
-        ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', height: '42px', color: 'var(--text-primary)', fontWeight: 500 }}>
-                <span style={{ color: '#94a3b8' }}>{icon}</span>
-                {value || <span style={{ color: '#94a3b8', fontWeight: 400 }}>Not set</span>}
-            </div>
-        )}
-    </div>
-);
 
 export default ProfilePage;

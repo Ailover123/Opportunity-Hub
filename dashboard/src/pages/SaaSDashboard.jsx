@@ -3,8 +3,7 @@ import { useUser } from '../context/UserContext';
 import {
     Shield, Users, Database, Zap, Download,
     RefreshCcw, ExternalLink, Calendar, CheckCircle2,
-    HardDrive, AlertCircle, LayoutDashboard, Globe
-
+    HardDrive, AlertCircle, LayoutDashboard, Globe, Award
 } from 'lucide-react';
 
 import { useNotification } from '../context/NotificationContext';
@@ -18,9 +17,9 @@ import {
 
 // Feature-based components
 import StatCard from '../features/dashboard/components/StatCard';
-import MeetingItem from '../features/dashboard/components/MeetingItem';
 import ActivityItem from '../features/dashboard/components/ActivityItem';
 import FeatureGuard from '../components/common/FeatureGuard';
+import RankedList from '../features/opportunities/components/RankedList';
 
 const socket = io(window.location.origin.replace('5173', '3001'), {
     withCredentials: true,
@@ -31,13 +30,15 @@ const SaaSDashboard = () => {
     const { user, checkAuth } = useUser();
     const { addNotification } = useNotification();
     const [results, setResults] = useState([]);
-    const [stats, setStats] = useState({ total: 0, verified: 0, categories: {} });
+    const [stats, setStats] = useState({ total: 0, topScore: 0 });
     const [loading, setLoading] = useState(true);
-    const [syncing, setSyncing] = useState(false);
+    const [isRanked, setIsRanked] = useState(false);
+    const [fallbackMessage, setFallbackMessage] = useState('');
     const [collecting, setCollecting] = useState(false);
-    const [meetings, setMeetings] = useState([]);
+    const [showIntent, setShowIntent] = useState(null); // { id, score, reasons, rank }
     const [activities, setActivities] = useState([]);
     const [showDriveModal, setShowDriveModal] = useState(false);
+    const [locationFilter, setLocationFilter] = useState('all'); // 'all', 'online', 'physical'
 
     useEffect(() => {
         if (user) {
@@ -63,18 +64,62 @@ const SaaSDashboard = () => {
     const fetchDashboardData = async () => {
         setLoading(true);
         try {
-            const [opps, meet, act] = await Promise.all([
-                axios.get('/api/opportunities'),
-                axios.get('/api/meetings/my-meetings'),
+            const [opps, act] = await Promise.all([
+                axios.get('/api/opportunities/ranked'),
                 axios.get('/api/notifications')
             ]);
-            setResults(opps.data || []);
-            setMeetings(meet.data || []);
+            
+            setResults(opps.data.data || []);
+            setIsRanked(opps.data.isRanked);
+            setFallbackMessage(opps.data.fallbackMessage);
+            
+            // Calculate stats
+            const topScore = (opps.data.data && opps.data.data.length > 0) ? (opps.data.data[0].score || 0) : 0;
+            setStats({
+                total: opps.data.data ? opps.data.data.length : 0,
+                topScore: topScore
+            });
+
             setActivities(act.data || []);
         } catch (err) {
             console.error('Fetch error:', err);
+            addNotification('Failed to fetch intelligence data', 'error');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleStatusUpdate = async (id, status, score, reasons, rank) => {
+        try {
+            await axios.patch(`/api/opportunities/${id}/status`, { status, score, reasons, rank });
+            setResults(prev => prev.map(o => o.id === id ? { ...o, status } : o));
+            
+            if (status === 'applied') {
+                setShowIntent({ id, score, reasons, rank });
+                // Auto-hide after 10s if no interaction
+                setTimeout(() => setShowIntent(null), 10000);
+            }
+            
+            addNotification(status === 'applied' ? 'Marked as Applied!' : 'Status updated', 'success');
+        } catch (err) {
+            addNotification('Update failed', 'error');
+        }
+    };
+
+    const submitIntent = async (tag) => {
+        if (!showIntent) return;
+        try {
+            await axios.patch(`/api/opportunities/${showIntent.id}/status`, { 
+                status: 'applied',
+                score: showIntent.score,
+                reasons: showIntent.reasons,
+                rank: showIntent.rank,
+                intent_tag: tag 
+            });
+            setShowIntent(null);
+            addNotification('Feedback captured!', 'success');
+        } catch (err) {
+            console.error(err);
         }
     };
 
@@ -231,149 +276,119 @@ const SaaSDashboard = () => {
             </AnimatePresence>
 
             <div className="content-body">
-                <div className="stats-grid">
-                    <StatCard title="Total Collected" value={results.length.toLocaleString()} icon={<Database size={18} />} />
-                    <StatCard title="Global Reach" value={results.filter(o => o.source === 'unstop').length.toLocaleString()} icon={<Globe size={18} />} />
-                    <StatCard title="Sync Frequency" value={user?.plan === 'free' ? "24h" : (user?.plan === 'pro' ? "6h" : "1h")} icon={<Calendar size={18} />} />
-                    <StatCard title="System Performance" value="Optimal" icon={<Zap size={18} />} />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
-                    <div className="card">
-                        <h2 className="card-title" style={{ marginBottom: '1.5rem' }}>Collection Volume Trend</h2>
-                        <div style={{ width: '100%', height: 300 }}>
-                            <ResponsiveContainer>
-                                <AreaChart data={trendData}>
-                                    <defs>
-                                        <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3} />
-                                            <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
-                                        </linearGradient>
-                                    </defs>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
-                                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
-                                    <Tooltip
-                                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                    />
-                                    <Legend verticalAlign="top" height={36} />
-                                    <Area type="monotone" dataKey="count" name="Opportunities" stroke="var(--primary)" fillOpacity={1} fill="url(#colorValue)" />
-                                </AreaChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </div>
-
-                    <div className="card">
-                        <h2 className="card-title" style={{ marginBottom: '1.5rem' }}>Platform Share</h2>
-                        <div style={{ width: '100%', height: 300 }}>
-                            <ResponsiveContainer>
-                                <PieChart>
-                                    <Pie
-                                        data={platformData}
-                                        innerRadius={60}
-                                        outerRadius={80}
-                                        paddingAngle={5}
-                                        dataKey="value"
+                <AnimatePresence>
+                    {showIntent && (
+                        <motion.div 
+                            initial={{ opacity: 0, scale: 0.9, y: 50 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.9, y: 50 }}
+                            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white p-6 rounded-3xl shadow-2xl flex flex-col gap-4 border border-slate-700"
+                        >
+                            <div className="text-center font-bold">Why did you choose this?</div>
+                            <div className="flex flex-wrap gap-2 justify-center">
+                                {['Better Fit', 'Easier to Apply', 'Top Brand', 'Near Deadline'].map(tag => (
+                                    <button 
+                                        key={tag}
+                                        onClick={() => submitIntent(tag)}
+                                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm font-medium transition-colors"
                                     >
-                                        {platformData.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                        ))}
-                                    </Pie>
-                                    <Tooltip />
-                                    <Legend verticalAlign="bottom" height={36} />
-                                </PieChart>
-                            </ResponsiveContainer>
+                                        {tag}
+                                    </button>
+                                ))}
+                                <button 
+                                    onClick={() => setShowIntent(null)}
+                                    className="px-4 py-2 bg-slate-700 rounded-xl text-sm font-medium"
+                                >
+                                    Dismiss
+                                </button>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {!isRanked && (
+                    <motion.div 
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-orange-50 border-2 border-orange-200 p-4 rounded-2xl mb-8 flex items-center gap-4"
+                    >
+                        <AlertCircle className="text-orange-500" />
+                        <div className="flex-1">
+                            <p className="text-orange-900 font-bold">{fallbackMessage || "Personalized ranking is inactive."}</p>
+                            <p className="text-orange-700 text-sm">Update your profile skills to see ranked opportunities.</p>
                         </div>
-                    </div>
+                        <button 
+                            onClick={() => window.location.href = '/profile'}
+                            className="px-4 py-2 bg-orange-500 text-white rounded-xl font-bold text-sm shadow-md"
+                        >
+                            Complete Profile
+                        </button>
+                    </motion.div>
+                )}
+
+                <div className="stats-grid">
+                    <StatCard title="Priority Opportunities" value={stats.total} icon={<Database size={18} />} />
+                    <StatCard title="Best Match Score" value={`${stats.topScore}/10`} icon={<Award size={18} />} />
+                    <StatCard title="Applied Today" value={results.filter(o => o.status === 'applied').length} icon={<CheckCircle2 size={18} />} />
+                    <StatCard title="System Node" value="Optimal" icon={<Zap size={18} />} />
                 </div>
 
-                <div className="card">
-                    <div className="card-header">
-                        <h2 className="card-title">Live Pipeline</h2>
-                        <div style={{ display: 'flex', gap: '0.75rem' }}>
-                            <button className="btn btn-outline" onClick={handleExport}>
-                                <Download size={16} /> Export
-                            </button>
+                <div className="card mb-8">
+                    <div className="card-header border-b border-slate-100 pb-6 mb-8">
+                        <div>
+                            <h2 className="text-2xl font-bold text-slate-900">Recommended for You</h2>
+                            <p className="text-slate-500 text-sm mt-1">AI-driven prioritization based on your engineering profile</p>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                            <div className="flex bg-slate-100 p-1 rounded-xl">
+                                <button 
+                                    onClick={() => setLocationFilter('all')}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${locationFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    All
+                                </button>
+                                <button 
+                                    onClick={() => setLocationFilter('online')}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${locationFilter === 'online' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    Online
+                                </button>
+                                <button 
+                                    onClick={() => setLocationFilter('physical')}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${locationFilter === 'physical' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    Offline
+                                </button>
+                            </div>
+
                             <button
                                 className="btn btn-primary"
                                 onClick={triggerCollection}
                                 disabled={collecting}
                             >
                                 <RefreshCcw size={16} className={collecting ? 'animate-spin' : ''} />
-                                {collecting ? 'Syncing...' : 'Sync Now'}
+                                {collecting ? 'Detecting Shifts...' : 'Sync Intel'}
                             </button>
                         </div>
                     </div>
 
-                    <div className="table-container">
-                        <table className="data-table">
-                            <thead>
-                                <tr>
-                                    <th>OPPORTUNITY NAME</th>
-                                    <th>SOURCE</th>
-                                    <th>HOST</th>
-                                    <th>DEADLINE</th>
-                                    <th>ACTION</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {results.length > 0 ? results.map((item, i) => (
-                                    <tr key={i}>
-                                        <td style={{ fontWeight: 600 }}>{item.title}</td>
-                                        <td><span className="badge badge-indigo">{getSourceLabel(item.source)}</span></td>
-                                        <td>{item.organization}</td>
-                                        <td>{item.deadline}</td>
-                                        <td>
-                                            <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                                <button
-                                                    onClick={() => {
-                                                        if (item.url) window.open(item.url, '_blank');
-                                                        else addNotification('Source URL unavailable for this item.', 'warning');
-                                                    }}
-                                                    className="btn btn-outline"
-                                                    style={{ padding: '4px 8px', borderColor: 'var(--primary)', color: 'var(--primary)' }}
-                                                    title="View Original"
-                                                >
-                                                    <ExternalLink size={14} /> View Source
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                )) : (
-                                    <tr><td colSpan="5" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>No data yet. Hit Sync to start.</td></tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+                    <RankedList 
+                        opportunities={results.filter(opp => {
+                            if (locationFilter === 'all') return true;
+                            if (locationFilter === 'online') return opp.location?.toLowerCase().includes('online');
+                            if (locationFilter === 'physical') return !opp.location?.toLowerCase().includes('online');
+                            return true;
+                        })} 
+                        loading={loading} 
+                        onStatusUpdate={handleStatusUpdate} 
+                    />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
                     <div className="card">
-                        <h2 className="card-title" style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <Calendar size={18} color="var(--primary)" /> Team Syncs
-                        </h2>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                            <FeatureGuard featureId="communityWrite" fallback={
-                                <div
-                                    onClick={() => addNotification('Team Sync is a Pro Feature', 'info')}
-                                    style={{ padding: '1rem', background: '#fef2f2', border: '1px dashed #fecaca', borderRadius: '4px', fontSize: '0.875rem', cursor: 'pointer' }}
-                                >
-                                    Upgrade to Pro to sync your Google Calendar and join Team Syncs.
-                                </div>
-                            }>
-                                {meetings.length > 0 ? meetings.map((m, i) => (
-                                    <MeetingItem key={i} title={m.title} time={m.time} />
-                                )) : (
-                                    <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>No upcoming syncs.</div>
-                                )}
-                            </FeatureGuard>
-                        </div>
-                    </div>
-
-                    <div className="card">
-                        <h2 className="card-title" style={{ marginBottom: '1.25rem' }}>Activity Feed</h2>
+                        <h2 className="card-title" style={{ marginBottom: '1.25rem' }}>Opportunity Intelligence Log</h2>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                            {activities.length > 0 ? activities.map((a, i) => (
+                            {activities.length > 0 ? activities.slice(0, 5).map((a, i) => (
                                 <ActivityItem key={i} text={a.message} time={formatTime(a.created_at)} type={a.type} />
                             )) : (
                                 <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>System quiet. No recent alerts.</div>

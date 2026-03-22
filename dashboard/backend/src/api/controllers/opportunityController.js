@@ -1,4 +1,5 @@
 const { db } = require('../../utils/db');
+const { v4: uuidv4 } = require('uuid');
 
 exports.getStats = async (req, res) => {
     const userId = req.user.id;
@@ -36,6 +37,22 @@ exports.getOpportunities = async (req, res) => {
     try {
         const rows = await db.all(query, params);
         res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.logClick = async (req, res) => {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const { score, rank } = req.body;
+
+    try {
+        await db.run(
+            'INSERT INTO user_feedback (id, user_id, opportunity_id, feedback_type, score, rank) VALUES (?, ?, ?, ?, ?, ?)',
+            [uuidv4(), userId, id, 'click', score || 0, rank || 0]
+        );
+        res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

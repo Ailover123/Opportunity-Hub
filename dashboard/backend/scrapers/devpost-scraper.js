@@ -51,14 +51,15 @@ class DevpostScraper {
       const seenTitles = new Set();
       
       // Look for hackathon tiles or any h3/a with hackathon keywords
-      // Updated selectors for 2026 Devpost structure
-      $('.hackathon-tile, .featured-hackathon-tile, article, div[class*="tile"], h3').each((i, el) => {
+      // Refined selectors to avoid sidebar filters and generic tiles
+      $('.hackathon-tile, .featured-hackathon-tile, article.hackathon-tile, a.hackathon-tile-link').each((i, el) => {
         const $el = $(el);
-        const titleEl = $el.find('h3, h4, .hackathon-tile-title, a[href*="devpost.com/hackathons/"]').first();
-        const text = titleEl.text().trim() || $el.text().trim().split('\n')[0];
-        const href = titleEl.attr('href') || $el.find('a').attr('href');
+        const titleEl = $el.find('h3, h4, .hackathon-tile-title').first();
+        const text = titleEl.text().trim() || $el.find('.tile-title').text().trim();
+        const href = $el.find('a[href*="/hackathons/"]').first().attr('href') || $el.attr('href');
         
-        if (text && text.length > 3 && !seenTitles.has(text) && !text.includes('Sign In')) {
+        // Ensure it's a real hackathon tile with a title and a specific link
+        if (text && text.length > 5 && href && href.includes('/hackathons/') && !seenTitles.has(text)) {
           seenTitles.add(text);
           // Location extraction
           let location = 'Online';

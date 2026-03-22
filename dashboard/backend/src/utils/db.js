@@ -145,6 +145,19 @@ const initDB = async () => {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )`);
 
+        // Feedback & Clicks
+        await db.execute(`CREATE TABLE IF NOT EXISTS user_feedback (
+            id VARCHAR(255) PRIMARY KEY,
+            user_id VARCHAR(255),
+            opportunity_id VARCHAR(255),
+            feedback_type VARCHAR(50), 
+            score FLOAT,
+            rank INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX (user_id),
+            INDEX (opportunity_id)
+        )`);
+
         console.log('✔ MySQL Database Schema Initialized');
     } catch (err) {
         console.error('✘ Schema Initialization Failed:', err.message);

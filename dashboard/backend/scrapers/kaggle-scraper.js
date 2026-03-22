@@ -45,7 +45,7 @@ class KaggleScraper {
       // Randomized delay before navigation
       await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
       
-      await this.page.goto(this.baseUrl, { waitUntil: 'load', timeout: 60000 });
+      await this.page.goto(this.baseUrl, { waitUntil: 'load', timeout: 90000 });
       
       // Simulate slight mouse movement
       await this.page.mouse.move(100, 100);

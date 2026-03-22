@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: opportunity-hub
+    env: node
+    plan: free
+    buildCommand: "cd dashboard && npm install && npm run build && cd ../backend && npm install"
+    startCommand: "cd dashboard/backend && node server.js"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false # User to provide MySQL URL
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        value: https://opportunity-hub.onrender.com # Update after first deploy
+      - key: PORT
+        value: 10000

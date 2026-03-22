@@ -15,6 +15,7 @@ const { db, initDB } = require('./src/utils/db');
 const paymentService = require('./src/services/paymentService');
 const scraperService = require('./src/services/scraperService');
 const BaseWorker = require('./src/workers/baseWorker');
+const ScoringEngine = require('./src/services/scoringEngine');
 const { checkTier } = require('./src/middleware/tierGuard');
 
 const authRoutes = require('./auth-routes'); // Legacy Google Auth
@@ -44,7 +45,9 @@ app.use(express.static('public'));
 
 // Request Logger
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  if (!req.url.includes('/api/auth/me')) {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  }
   next();
 });
 
@@ -59,12 +62,11 @@ const authenticateToken = (req, res, next) => {
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) return res.status(403).json({ error: 'Invalid or expired token' });
 
-    // Fetch user from DB to get latest plan_id
-    db.get('SELECT * FROM users WHERE id = ?', [decoded.id], (err, user) => {
-      if (err || !user) return res.status(403).json({ error: 'User not found' });
+    db.get('SELECT * FROM users WHERE id = ?', [decoded.id]).then(user => {
+      if (!user) return res.status(403).json({ error: 'User not found' });
       req.user = user;
       next();
-    });
+    }).catch(err => res.status(500).json({ error: 'Database error' }));
   });
 };
 
@@ -74,31 +76,32 @@ app.post('/api/auth/signup', async (req, res) => {
   const id = uuidv4();
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
-    db.run('INSERT INTO users (id, email, name, password, plan_id) VALUES (?, ?, ?, ?, ?)',
-      [id, email, name, hashedPassword, 'free'],
-      (err) => {
-        if (err) return res.status(500).json({ error: 'User already exists' });
-        res.json({ success: true });
-      });
+    await db.run('INSERT INTO users (id, email, name, password, plan_id) VALUES (?, ?, ?, ?, ?)',
+      [id, email, name, hashedPassword, 'free']);
+    res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: 'Signup failed' });
+    res.status(500).json({ error: 'Signup failed or user exists' });
   }
 });
 
 app.post('/api/auth/login', (req, res) => {
   const { email, password } = req.body;
-  db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
-    if (err || !user) return res.status(401).json({ error: 'Invalid credentials' });
+  db.get('SELECT * FROM users WHERE email = ?', [email]).then(async (user) => {
+    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) return res.status(401).json({ error: 'Invalid credentials' });
 
     const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
-    res.cookie('auth_token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', maxAge: 7 * 24 * 60 * 60 * 1000 });
+    res.cookie('auth_token', token, { 
+      httpOnly: true, 
+      secure: process.env.NODE_ENV === 'production', 
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+    });
     res.json({ success: true, user: { id: user.id, name: user.name, plan: user.plan_id, email: user.email } });
-  });
+  }).catch(err => res.status(500).json({ error: 'Login failed' }));
 });
-
 
 app.post('/api/auth/logout', (req, res) => {
   res.clearCookie('auth_token');
@@ -106,55 +109,50 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.get('/api/auth/me', authenticateToken, (req, res) => {
-  res.json({ user: { id: req.user.id, name: req.user.name, plan: req.user.plan_id, email: req.user.email } });
+  res.json({ user: { id: req.user.id, name: req.user.name, plan: req.user.plan_id, email: req.user.email, skills: req.user.skills, bio: req.user.bio } });
 });
 
-app.get('/api/auth/session', (req, res) => {
-  const token = req.cookies.auth_token;
-  if (!token) return res.json({ user: null });
+// --- OPPORTUNITY RANKING ---
+app.get('/api/opportunities/ranked', authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const skills = req.user.skills ? req.user.skills.split(',').map(s => s.trim()) : [];
+  const interests = req.user.bio ? req.user.bio.split(',').map(i => i.trim()) : [];
+  
+  const engine = new ScoringEngine({ skills, interests });
 
-  jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (err) return res.json({ user: null });
-
-    db.get('SELECT * FROM users WHERE id = ?', [decoded.id], (err, user) => {
-      if (err || !user) return res.json({ user: null });
-      res.json({ user: { id: user.id, name: user.name, plan: user.plan_id, email: user.email } });
-    });
-  });
+  db.all('SELECT * FROM opportunities WHERE user_id = ? OR user_id IS NULL', [userId]).then(rows => {
+    const result = engine.rank(rows);
+    res.json(result);
+  }).catch(err => res.status(500).json({ error: 'Failed to fetch opportunities' }));
 });
 
-
-// --- PAYMENT ROUTES ---
-app.post('/api/payments/create-checkout', authenticateToken, async (req, res) => {
-  const { planId, gateway } = req.body; // gateway: 'stripe' or 'razorpay'
+// --- UPDATING STATUS ---
+app.patch('/api/opportunities/:id/status', authenticateToken, async (req, res) => {
+  const { status, score, reasons, rank, intent_tag } = req.body;
+  const { id } = req.params;
+  const userId = req.user.id;
+  
   try {
-    if (gateway === 'stripe') {
-      const url = await paymentService.createStripeSession(req.user.id, planId);
-      res.json({ url });
-    } else {
-      const order = await paymentService.createRazorpayOrder(req.user.id, planId);
-      res.json({ order });
+    await db.run('UPDATE opportunities SET status = ? WHERE id = ?', [status, id]);
+
+    if (status === 'applied') {
+      const actionId = uuidv4();
+      const profileSnapshot = JSON.stringify({ skills: req.user.skills, bio: req.user.bio });
+      const reasonSnapshot = JSON.stringify(reasons || []);
+      
+      await db.run(
+        'INSERT INTO user_actions (id, user_id, opportunity_id, action_type, score_at_time, reason_snapshot, profile_snapshot, rank_at_time, intent_tag) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [actionId, userId, id, 'applied', score || 0, reasonSnapshot, profileSnapshot, rank || 0, intent_tag || null]
+      );
     }
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Update failed:', err);
+    res.status(500).json({ error: 'Update failed' });
   }
 });
 
-app.post('/api/payments/verify-razorpay', authenticateToken, async (req, res) => {
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature, planId } = req.body;
-  const verified = paymentService.verifyUPIPayment(razorpay_order_id, razorpay_payment_id, razorpay_signature);
-
-  if (verified) {
-    db.run('UPDATE users SET plan_id = ? WHERE id = ?', [planId, req.user.id], (err) => {
-      if (err) return res.status(500).json({ error: 'Failed to update plan' });
-      res.json({ success: true });
-    });
-  } else {
-    res.status(400).json({ error: 'Payment verification failed' });
-  }
-});
-
-// --- SCRAPING ROUTES ---
+// --- SCRAPING ---
 app.post('/api/collect', authenticateToken, async (req, res) => {
   const userId = req.user.id;
   const plan = req.user.plan_id;
@@ -162,21 +160,18 @@ app.post('/api/collect', authenticateToken, async (req, res) => {
   try {
     const worker = app.get('worker');
     worker.addTask(userId, plan);
-    res.json({ success: true, message: 'Collection task queued in background' });
+    await db.run('UPDATE users SET last_sync_at = CURRENT_TIMESTAMP WHERE id = ?', [userId]);
+    res.json({ success: true, message: 'Collection task queued' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// --- GOOGLE AUTH & DRIVE (LEGACY SUPPORT) ---
+// --- ROUTES ---
 app.use('/api', authRoutes);
-
-// --- COMMUNITY & MEETING ROUTES ---
 app.use('/api/community', authenticateToken, communityRoutes);
 app.use('/api/meetings', authenticateToken, meetingRoutes);
 app.use('/api/notifications', authenticateToken, notificationRoutes);
-
-// --- NEW MODULAR ROUTES ---
 app.use('/api/opportunities', authenticateToken, opportunityRoutes);
 app.use('/api/sources', authenticateToken, sourceRoutes);
 app.use('/api/export', authenticateToken, exportRoutes);
@@ -184,32 +179,26 @@ app.use('/api/schedules', authenticateToken, scheduleRoutes);
 app.use('/api/profile', authenticateToken, require('./src/api/routes/profile'));
 app.use('/api/chat', authenticateToken, require('./src/api/routes/chat'));
 
-// --- HEALTH CHECK ---
 app.get('/api/health', (req, res) => res.json({ status: 'SaaS Active', timestamp: new Date() }));
 
-// --- SOCKET.IO REAL-TIME ---
+// --- SOCKET.IO ---
 io.on('connection', (socket) => {
-  console.log(`[Socket] User connected: ${socket.id}`);
-
-  socket.on('join_team', (teamId) => {
-    socket.join(teamId);
-    console.log(`[Socket] User ${socket.id} joined team: ${teamId}`);
-  });
-
-  socket.on('send_message', (data) => {
-    // data: { teamId, userId, userName, content }
-    io.to(data.teamId).emit('new_message', data);
-  });
-
-  socket.on('disconnect', () => {
-    console.log(`[Socket] User disconnected: ${socket.id}`);
-  });
+  socket.on('join_team', (teamId) => socket.join(teamId));
+  socket.on('send_message', (data) => io.to(data.teamId).emit('new_message', data));
 });
 
-// Attach io and worker to app
 app.set('io', io);
 const worker = new BaseWorker(io);
 app.set('worker', worker);
+
+// --- STATIC FRONTEND SERVING (PRODUCTION) ---
+if (process.env.NODE_ENV === 'production') {
+  const distPath = path.join(__dirname, '../dist');
+  app.use(express.static(distPath));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
 
 // Start Server
 server.listen(PORT, () => {

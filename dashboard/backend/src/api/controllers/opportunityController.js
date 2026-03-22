@@ -49,7 +49,7 @@ exports.logClick = async (req, res) => {
 
     try {
         await db.run(
-            'INSERT INTO user_feedback (id, user_id, opportunity_id, feedback_type, score, rank) VALUES (?, ?, ?, ?, ?, ?)',
+            'INSERT INTO user_feedback (id, user_id, opportunity_id, feedback_type, score, `rank`) VALUES (?, ?, ?, ?, ?, ?)',
             [uuidv4(), userId, id, 'click', score || 0, rank || 0]
         );
         res.json({ success: true });

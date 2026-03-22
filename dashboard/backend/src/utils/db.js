@@ -152,7 +152,7 @@ const initDB = async () => {
             opportunity_id VARCHAR(255),
             feedback_type VARCHAR(50), 
             score FLOAT,
-            rank INTEGER,
+            \`rank\` INTEGER,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             INDEX (user_id),
             INDEX (opportunity_id)

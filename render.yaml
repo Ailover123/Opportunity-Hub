@@ -7,7 +7,9 @@ services:
     startCommand: "cd dashboard/backend && node server.js"
     envVars:
       - key: PUPPETEER_CACHE_DIR
-        value: /opt/render/.cache/puppeteer
+        value: /opt/render/project/src/dashboard/backend/.puppeteer-cache
+      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
+        value: "false"
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL

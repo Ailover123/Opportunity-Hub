@@ -10,11 +10,14 @@ class DevpostScraper {
 
   async init() {
     this.browser = await puppeteer.launch({
-      headless: true,
+      headless: "new",
       args: [
         '--no-sandbox', 
         '--disable-setuid-sandbox', 
         '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--single-process',
+        '--no-zygote',
         '--disable-blink-features=AutomationControlled'
       ]
     });
@@ -41,25 +44,24 @@ class DevpostScraper {
       // Traditional wait
       await new Promise(r => setTimeout(r, 4000));
       
-      const title = await this.page.title();
       const content = await this.page.content();
       const $ = cheerio.load(content);
-      
-      console.log(`[Devpost] Page Title: ${title}`);
       
       const results = [];
       const seenTitles = new Set();
       
       // Look for hackathon tiles or any h3/a with hackathon keywords
-      // Refined selectors to avoid sidebar filters and generic tiles
-      $('.hackathon-tile, .featured-hackathon-tile, article.hackathon-tile, a.hackathon-tile-link').each((i, el) => {
+      // Refined selectors: inclusive but filtered for quality
+      $('.hackathon-tile, .featured-hackathon-tile, article, div[class*="tile"]').each((i, el) => {
         const $el = $(el);
         const titleEl = $el.find('h3, h4, .hackathon-tile-title').first();
         const text = titleEl.text().trim() || $el.find('.tile-title').text().trim();
-        const href = $el.find('a[href*="/hackathons/"]').first().attr('href') || $el.attr('href');
+        const href = $el.find('a[href*="/hackathons/"]').first().attr('href') || $el.closest('a').attr('href') || $el.attr('href');
         
-        // Ensure it's a real hackathon tile with a title and a specific link
+        // Ensure it's a real hackathon tile with a specific link (and avoid generic "Filters")
         if (text && text.length > 5 && href && href.includes('/hackathons/') && !seenTitles.has(text)) {
+          if (text.includes('Filter') || text.includes('Sign In')) return;
+          
           seenTitles.add(text);
           // Location extraction
           let location = 'Online';
@@ -89,6 +91,8 @@ class DevpostScraper {
     } catch (error) {
       console.error('Devpost scraping error:', error.message);
       return [];
+    } finally {
+      await this.close();
     }
   }
 

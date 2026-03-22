@@ -55,10 +55,17 @@ class BaseWorker {
                             totalNew++;
                         }
                     }
+                    
+                    // Memory safety: small pause between scrapers
+                    await new Promise(r => setTimeout(r, 3000));
+                    
                 } catch (scrapeError) {
                     console.error(`[Worker] Failed to scrape ${target}:`, scrapeError.message);
                 }
             }
+            
+            // Final cleanup across all browser instances
+            await scraperService.close();
 
             console.log(`[Worker] Sync Summary: Found ${totalFound}, New ${totalNew}`);
             this.emitStatus(task.userId, 'completed', `Sync Complete: Found ${totalFound} items (${totalNew} new)`);

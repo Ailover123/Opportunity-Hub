@@ -10,11 +10,14 @@ class KaggleScraper {
 
   async init() {
     this.browser = await puppeteer.launch({
-      headless: true,
+      headless: "new",
       args: [
         '--no-sandbox', 
         '--disable-setuid-sandbox', 
         '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--single-process',
+        '--no-zygote',
         '--disable-blink-features=AutomationControlled'
       ]
     });
@@ -96,6 +99,8 @@ class KaggleScraper {
     } catch (error) {
       console.error('Kaggle scraping error:', error.message);
       return [];
+    } finally {
+      await this.close();
     }
   }
 

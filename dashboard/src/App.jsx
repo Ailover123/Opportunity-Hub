@@ -8,7 +8,8 @@ import Dashboard from './pages/SaaSDashboard';
 import CommunityHub from './pages/CommunityHub';
 import ProfilePage from './pages/ProfilePage';
 import LoginPage from './pages/DedicatedLogin';
-import { LayoutDashboard, Users, CreditCard, LogOut, Briefcase, UserCircle } from 'lucide-react';
+import DebugAnalytics from './pages/DebugAnalytics';
+import { LayoutDashboard, Users, CreditCard, LogOut, Briefcase, UserCircle, BarChart2 } from 'lucide-react';
 
 const Sidebar = () => {
   const { logout, user } = useUser();
@@ -17,11 +18,8 @@ const Sidebar = () => {
 
 
   const navItems = [
-    { path: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
-    { path: '/community', label: 'Community', icon: <Users size={20} /> },
-
-    { path: '/profile', label: 'Profile Settings', icon: <UserCircle size={20} /> },
-    { path: '/billing', label: 'Plans & Billing', icon: <CreditCard size={20} /> },
+    { path: '/dashboard', label: 'Top Opportunities', icon: <LayoutDashboard size={20} /> },
+    { path: '/profile', label: 'My Search Profile', icon: <UserCircle size={20} /> },
   ];
 
   return (
@@ -107,9 +105,8 @@ const App = () => {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/community" element={<ProtectedRoute><CommunityHub /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
-            <Route path="/billing" element={<ProtectedRoute><div className="main-content"><h1>Plans & Billing</h1><p>Secure checkout powered by Stripe & Razorpay. Select your preferred gateway.</p></div></ProtectedRoute>} />
+            <Route path="/debug-intelligence" element={<ProtectedRoute><DebugAnalytics /></ProtectedRoute>} />
             <Route path="/" element={<Navigate to="/dashboard" />} />
           </Routes>
         </Router>

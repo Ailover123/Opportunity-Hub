@@ -12,6 +12,8 @@ client_secret*.json
 uploads/
 *.sqlite
 opportunityhub.db
+drive_tokens.json
+dashboard/backend/drive_tokens.json
 
 # Logs
 npm-debug.log*

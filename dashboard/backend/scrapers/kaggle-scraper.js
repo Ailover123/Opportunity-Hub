@@ -16,8 +16,6 @@ class KaggleScraper {
         '--disable-setuid-sandbox', 
         '--disable-dev-shm-usage',
         '--disable-gpu',
-        '--single-process',
-        '--no-zygote',
         '--disable-blink-features=AutomationControlled'
       ]
     });
@@ -71,12 +69,15 @@ class KaggleScraper {
       const seenTitles = new Set();
 
       // Look for titles in h3, h4 and links with competition patterns
-      // Kaggle uses a more complex structure, so we look for any link or header that looks like a title
       $('.km-list-card, .sc-kOHtZc, h3, h4, a[href*="/c/"]').each((i, el) => {
-        const text = $(el).text().trim().split('\n')[0];
-        const href = $(el).attr('href') || $(el).find('a').attr('href');
+        const $el = $(el);
+        const text = $el.text().trim().split('\n')[0];
+        const href = $el.attr('href') || $el.find('a').attr('href');
         
-        if (text && text.length > 5 && !seenTitles.has(text) && !['Competitions', 'Filters', 'Sort by', 'Sign In', 'Search'].includes(text)) {
+        if (text && text.length > 5 && !seenTitles.has(text)) {
+          if (['Competitions', 'Filters', 'Sort by', 'Sign In', 'Search'].includes(text)) return;
+          
+          console.log(`[Kaggle] Found potential item: "${text}" with link: ${href}`);
           seenTitles.add(text);
           results.push({
             title: text,

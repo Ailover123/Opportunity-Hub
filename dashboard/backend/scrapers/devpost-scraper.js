@@ -56,12 +56,13 @@ class DevpostScraper {
         const $el = $(el);
         const titleEl = $el.find('h3, h4, .hackathon-tile-title').first();
         const text = titleEl.text().trim() || $el.find('.tile-title').text().trim();
-        const href = $el.find('a[href*="/hackathons/"]').first().attr('href') || $el.closest('a').attr('href') || $el.attr('href');
+        const href = $el.find('a').first().attr('href') || $el.closest('a').attr('href') || $el.attr('href');
         
-        // Ensure it's a real hackathon tile with a specific link (and avoid generic "Filters")
-        if (text && text.length > 5 && href && href.includes('/hackathons/') && !seenTitles.has(text)) {
-          if (text.includes('Filter') || text.includes('Sign In')) return;
+        // Ensure it's a real item with a title and a link (and avoid obvious UI chrome)
+        if (text && text.length > 5 && href && !seenTitles.has(text)) {
+          if (text.includes('Filter') || text.includes('Sign In') || text.includes('Menu')) return;
           
+          console.log(`[Devpost] Found potential item: "${text}" with link: ${href}`);
           seenTitles.add(text);
           // Location extraction
           let location = 'Online';

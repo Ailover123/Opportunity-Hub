@@ -3,7 +3,7 @@ services:
     name: opportunity-hub
     env: node
     plan: free
-    buildCommand: "cd dashboard && npm install && npm run build && cd ../backend && npm install"
+    buildCommand: "cd dashboard && npm install && npm run build && cd backend && npm install"
     startCommand: "cd dashboard/backend && node server.js"
     envVars:
       - key: NODE_ENV

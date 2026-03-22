@@ -86,34 +86,34 @@ class BaseWorker {
     }
 
     async checkExists(userId, item) {
-        return new Promise((resolve) => {
-            // For external sources (Unstop, etc), URL is the best unique ID
-            // For internal ones, title + user_id is the fallback
-            const query = item.url
-                ? 'SELECT id FROM opportunities WHERE user_id = ? AND url = ?'
-                : 'SELECT id FROM opportunities WHERE user_id = ? AND title = ?';
-            const param = item.url || item.title;
+        // For external sources (Unstop, etc), URL is the best unique ID
+        // For internal ones, title + user_id is the fallback
+        const query = item.url
+            ? 'SELECT id FROM opportunities WHERE user_id = ? AND url = ?'
+            : 'SELECT id FROM opportunities WHERE user_id = ? AND title = ?';
+        const param = item.url || item.title;
 
-            db.get(query, [userId, param], (err, row) => {
-                resolve(!!row);
-            });
-        });
+        try {
+            const row = await db.get(query, [userId, param]);
+            return !!row;
+        } catch (err) {
+            console.error('[Worker] checkExists failed:', err.message);
+            return false;
+        }
     }
 
 
     async saveOpportunity(userId, item) {
         const id = uuidv4();
-        return new Promise((resolve, reject) => {
-            db.run(
+        try {
+            await db.run(
                 'INSERT INTO opportunities (id, user_id, title, organization, deadline, source, url, category, collected_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
-                [id, userId, item.title, item.organization, item.deadline, item.source.toLowerCase(), item.url, item.category || 'general'],
-
-                (err) => {
-                    if (err) reject(err);
-                    else resolve();
-                }
+                [id, userId, item.title, item.organization, item.deadline, item.source.toLowerCase(), item.url, item.category || 'general']
             );
-        });
+        } catch (err) {
+            console.error('[Worker] saveOpportunity failed:', err.message);
+            throw err;
+        }
     }
 
 }

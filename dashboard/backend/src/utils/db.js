@@ -63,8 +63,17 @@ const initDB = async () => {
             skills TEXT,
             github_url VARCHAR(255),
             avatar_url VARCHAR(255),
+            last_sync_at DATETIME,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )`);
+
+        // Migration: Add last_sync_at if it's missing (for existing MySQL databases)
+        try {
+            await db.execute(`ALTER TABLE users ADD COLUMN last_sync_at DATETIME`);
+            console.log('✔ Migrated: Added last_sync_at to users table');
+        } catch (err) {
+            // Silence error if column already exists
+        }
 
         // Opportunities
         await db.execute(`CREATE TABLE IF NOT EXISTS opportunities (

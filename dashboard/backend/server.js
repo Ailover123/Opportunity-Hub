@@ -112,6 +112,17 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
   res.json({ user: { id: req.user.id, name: req.user.name, plan: req.user.plan_id, email: req.user.email, skills: req.user.skills, bio: req.user.bio } });
 });
 
+// Added to handle frontend session checks and avoid HTML fallback
+app.get('/api/auth/session', (req, res) => {
+  const token = req.cookies.auth_token;
+  if (!token) return res.status(401).json({ authenticated: false });
+
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err) return res.status(401).json({ authenticated: false });
+    res.json({ authenticated: true, userId: decoded.id });
+  });
+});
+
 // --- OPPORTUNITY RANKING ---
 app.get('/api/opportunities/ranked', authenticateToken, (req, res) => {
   const userId = req.user.id;

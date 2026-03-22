@@ -16,12 +16,7 @@ exports.exportToCsv = async (req, res) => {
             params.push(...categories);
         }
 
-        const data = await new Promise((resolve, reject) => {
-            db.all(query, params, (err, rows) => {
-                if (err) reject(err);
-                else resolve(rows);
-            });
-        });
+        const data = await db.all(query, params);
 
         if (data.length === 0) return res.status(404).json({ error: 'No data found' });
 

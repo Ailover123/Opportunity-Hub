@@ -1,118 +1,143 @@
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+const mysql = require('mysql2/promise');
 const { v4: uuidv4 } = require('uuid');
 
-const dbPath = path.resolve(__dirname, '../../opportunityhub.db');
-const db = new sqlite3.Database(dbPath);
+// Use DATABASE_URL from process.env or fallback to local
+const dbUrl = process.env.DATABASE_URL || 'mysql://root:password@localhost:3306/opportunityhub';
 
-const initDB = () => {
-    return new Promise((resolve, reject) => {
-        db.serialize(() => {
-            // Users table (SaaS ready)
-            db.run(`CREATE TABLE IF NOT EXISTS users (
-                id TEXT PRIMARY KEY,
-                email TEXT UNIQUE,
-                name TEXT,
-                password TEXT,
-                plan_id TEXT DEFAULT 'free',
-                google_drive_token TEXT,
-                google_drive_refresh_token TEXT,
-                bio TEXT,
-                skills TEXT,
-                github_url TEXT,
-                avatar_url TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )`);
+let pool;
 
-            // Opportunities (Collected data)
-            db.run(`CREATE TABLE IF NOT EXISTS opportunities (
-                id TEXT PRIMARY KEY,
-                user_id TEXT,
-                title TEXT,
-                organization TEXT,
-                deadline TEXT,
-                source TEXT,
-                url TEXT,
-                category TEXT,
-                description TEXT,
-                prize TEXT,
-                location TEXT,
-                status TEXT DEFAULT 'pending',
-                quality_score INTEGER DEFAULT 0,
-                collected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(user_id) REFERENCES users(id)
-            )`);
+try {
+    pool = mysql.createPool(dbUrl);
+    console.log('✔ MySQL Connection Pool Created');
+} catch (err) {
+    console.error('✘ Failed to create MySQL pool:', err.message);
+}
 
-            // Teams & Community
-            db.run(`CREATE TABLE IF NOT EXISTS teams (
-                id TEXT PRIMARY KEY,
-                name TEXT,
-                owner_id TEXT,
-                description TEXT,
-                is_private BOOLEAN DEFAULT 0,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(owner_id) REFERENCES users(id)
-            )`);
+// Compatibility Wrapper for SQLite-like API
+const db = {
+    all: async (query, params = []) => {
+        try {
+            const [rows] = await pool.execute(query.replace(/\?/g, '?'), params);
+            return rows;
+        } catch (err) {
+            console.error('[DB Error] all:', err.message);
+            throw err;
+        }
+    },
+    get: async (query, params = []) => {
+        try {
+            const [rows] = await pool.execute(query.replace(/\?/g, '?'), params);
+            return rows[0] || null;
+        } catch (err) {
+            console.error('[DB Error] get:', err.message);
+            throw err;
+        }
+    },
+    run: async (query, params = []) => {
+        try {
+            const [result] = await pool.execute(query.replace(/\?/g, '?'), params);
+            return { lastID: result.insertId, changes: result.affectedRows };
+        } catch (err) {
+            console.error('[DB Error] run:', err.message);
+            throw err;
+        }
+    },
+    // Special case for migrations or complex transactions if needed
+    serialize: (fn) => fn(), 
+    execute: (query, params = []) => pool.execute(query, params)
+};
 
-            db.run(`CREATE TABLE IF NOT EXISTS team_members (
-                team_id TEXT,
-                user_id TEXT,
-                role TEXT DEFAULT 'member',
-                joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY(team_id, user_id),
-                FOREIGN KEY(team_id) REFERENCES teams(id),
-                FOREIGN KEY(user_id) REFERENCES users(id)
-            )`);
+const initDB = async () => {
+    console.log('Initializing MySQL Database Schema...');
+    try {
+        // Users table
+        await db.execute(`CREATE TABLE IF NOT EXISTS users (
+            id VARCHAR(255) PRIMARY KEY,
+            email VARCHAR(255) UNIQUE,
+            name VARCHAR(255),
+            password VARCHAR(255),
+            plan_id VARCHAR(50) DEFAULT 'free',
+            google_drive_token TEXT,
+            google_drive_refresh_token TEXT,
+            bio TEXT,
+            skills TEXT,
+            github_url VARCHAR(255),
+            avatar_url VARCHAR(255),
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`);
 
-            db.run(`CREATE TABLE IF NOT EXISTS messages (
-                id TEXT PRIMARY KEY,
-                team_id TEXT,
-                user_id TEXT,
-                content TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(team_id) REFERENCES teams(id),
-                FOREIGN KEY(user_id) REFERENCES users(id)
-            )`);
+        // Opportunities
+        await db.execute(`CREATE TABLE IF NOT EXISTS opportunities (
+            id VARCHAR(255) PRIMARY KEY,
+            user_id VARCHAR(255),
+            title VARCHAR(255),
+            organization VARCHAR(255),
+            deadline VARCHAR(100),
+            source VARCHAR(50),
+            url VARCHAR(500),
+            category VARCHAR(50),
+            description LONGTEXT,
+            prize VARCHAR(255),
+            location VARCHAR(255),
+            status VARCHAR(20) DEFAULT 'pending',
+            quality_score INTEGER DEFAULT 0,
+            collected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX (user_id)
+        )`);
 
-            // Meetings
-            db.run(`CREATE TABLE IF NOT EXISTS meetings (
-                id TEXT PRIMARY KEY,
-                team_id TEXT,
-                title TEXT,
-                startTime DATETIME,
-                link TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(team_id) REFERENCES teams(id)
-            )`);
+        // Teams & Community
+        await db.execute(`CREATE TABLE IF NOT EXISTS teams (
+            id VARCHAR(255) PRIMARY KEY,
+            name VARCHAR(255),
+            owner_id VARCHAR(255),
+            description TEXT,
+            is_private BOOLEAN DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`);
 
-            // Schedules
-            db.run(`CREATE TABLE IF NOT EXISTS schedules (
-                id TEXT PRIMARY KEY,
-                user_id TEXT,
-                frequency TEXT,
-                time TEXT,
-                enabled BOOLEAN DEFAULT 1,
-                last_run DATETIME,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(user_id) REFERENCES users(id)
-            )`);
+        await db.execute(`CREATE TABLE IF NOT EXISTS team_members (
+            team_id VARCHAR(255),
+            user_id VARCHAR(255),
+            role VARCHAR(50) DEFAULT 'member',
+            joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(team_id, user_id)
+        )`);
 
-            console.log('✔ Database Schema Initialized / Verified');
+        await db.execute(`CREATE TABLE IF NOT EXISTS messages (
+            id VARCHAR(255) PRIMARY KEY,
+            team_id VARCHAR(255),
+            user_id VARCHAR(255),
+            content LONGTEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX (team_id)
+        )`);
 
-            // Perform Lazy Auth Migration
-            db.all("SELECT id, google_drive_token FROM users WHERE password IS NULL OR password = ''", [], (err, rows) => {
-                if (err) return resolve(); // Table might not exist or be empty
+        // Meetings
+        await db.execute(`CREATE TABLE IF NOT EXISTS meetings (
+            id VARCHAR(255) PRIMARY KEY,
+            team_id VARCHAR(255),
+            title VARCHAR(255),
+            startTime DATETIME,
+            link VARCHAR(500),
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`);
 
-                rows.forEach(user => {
-                    if (user.google_drive_token && user.google_drive_token.startsWith('$2')) {
-                        console.log(`[Migration] Moving password from token column for user: ${user.id}`);
-                        db.run("UPDATE users SET password = ? WHERE id = ?", [user.google_drive_token, user.id]);
-                    }
-                });
-                resolve();
-            });
-        });
-    });
+        // Schedules
+        await db.execute(`CREATE TABLE IF NOT EXISTS schedules (
+            id VARCHAR(255) PRIMARY KEY,
+            user_id VARCHAR(255),
+            frequency VARCHAR(50),
+            time VARCHAR(20),
+            enabled BOOLEAN DEFAULT 1,
+            last_run DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`);
+
+        console.log('✔ MySQL Database Schema Initialized');
+    } catch (err) {
+        console.error('✘ Schema Initialization Failed:', err.message);
+        throw err;
+    }
 };
 
 module.exports = { db, initDB };

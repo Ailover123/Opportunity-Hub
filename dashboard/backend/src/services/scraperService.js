@@ -170,30 +170,38 @@ class HybridScraper {
         const config = {
             kaggle: {
                 url: 'https://www.kaggle.com/competitions',
-                selector: '.sc-kOHtZc, div[class*="CompetitionItem"]',
-                mapper: ($, el) => ({
-                    title: $(el).find('h3').text().trim() || $(el).text().split('\n')[0],
-                    organization: 'Kaggle',
-                    source: 'kaggle',
-                    url: 'https://www.kaggle.com/competitions'
-                })
+                selector: '.sc-kOHtZc, div[class*="CompetitionItem"], h3, h4',
+                mapper: ($, el) => {
+                    const title = $(el).text().trim().split('\n')[0];
+                    if (title.length < 8) return null;
+                    return {
+                        title: title,
+                        organization: 'Kaggle',
+                        source: 'kaggle',
+                        url: 'https://www.kaggle.com/competitions'
+                    };
+                }
             },
             devpost: {
                 url: 'https://devpost.com/hackathons',
-                selector: '.hackathon-tile',
-                mapper: ($, el) => ({
-                    title: $(el).find('h3').text().trim(),
-                    organization: $(el).find('.organizer').text().trim(),
-                    source: 'devpost',
-                    url: $(el).find('a').attr('href')
-                })
+                selector: '.hackathon-tile, article, h3',
+                mapper: ($, el) => {
+                    const title = $(el).text().trim().split('\n')[0];
+                    if (title.length < 8) return null;
+                    return {
+                        title: title,
+                        organization: 'Devpost',
+                        source: 'devpost',
+                        url: 'https://devpost.com/hackathons'
+                    };
+                }
             }
         };
 
         if (!config[target]) return [];
 
         const { url, selector, mapper } = config[target];
-        console.log(`[Scraper] Fast-syncing ${target}...`);
+        console.log(`[Scraper] Fast-syncing ${target} with broad selectors...`);
         return this.scrapeStatic(url, selector, mapper);
     }
 

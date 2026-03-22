@@ -97,7 +97,7 @@ app.post('/api/auth/login', (req, res) => {
       httpOnly: true, 
       secure: process.env.NODE_ENV === 'production', 
       maxAge: 7 * 24 * 60 * 60 * 1000,
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+      sameSite: 'lax' // Better for same-domain session persistence
     });
     res.json({ success: true, user: { id: user.id, name: user.name, plan: user.plan_id, email: user.email } });
   }).catch(err => res.status(500).json({ error: 'Login failed' }));
@@ -119,7 +119,12 @@ app.get('/api/auth/session', (req, res) => {
 
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) return res.status(401).json({ authenticated: false });
-    res.json({ authenticated: true, userId: decoded.id });
+    
+    // Fetch full user for session restoration
+    db.get('SELECT id, name, email, plan_id FROM users WHERE id = ?', [decoded.id]).then(user => {
+      if (!user) return res.status(401).json({ authenticated: false });
+      res.json({ authenticated: true, user: { id: user.id, name: user.name, plan: user.plan_id, email: user.email } });
+    }).catch(() => res.status(500).json({ error: 'Session check failed' }));
   });
 });
 

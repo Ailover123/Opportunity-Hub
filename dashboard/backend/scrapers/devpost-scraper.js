@@ -1,4 +1,5 @@
 const puppeteer = require('puppeteer');
+const cheerio = require('cheerio');
 
 class DevpostScraper {
   constructor() {
@@ -10,54 +11,79 @@ class DevpostScraper {
   async init() {
     this.browser = await puppeteer.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+      args: [
+        '--no-sandbox', 
+        '--disable-setuid-sandbox', 
+        '--disable-dev-shm-usage',
+        '--disable-blink-features=AutomationControlled'
+      ]
     });
     this.page = await this.browser.newPage();
-    await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    // Modern User Agent
+    await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
+
+    // Stealth: Hide Puppeteer
+    await this.page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+      window.chrome = { runtime: {} };
+      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+    });
   }
 
   async scrapeHackathons() {
     try {
       if (!this.page) await this.init();
       
-      console.log('Scraping Devpost hackathons...');
-      await this.page.goto(this.baseUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+      console.log(`[Devpost] Navigating to: ${this.baseUrl} [V3-ACTIVE]`);
+      await this.page.goto(this.baseUrl, { waitUntil: 'load', timeout: 30000 });
       
-      // Wait for hackathon cards to load
-      await this.page.waitForSelector('.hackathon-tile', { timeout: 10000 });
+      // Traditional wait
+      await new Promise(r => setTimeout(r, 4000));
       
-      const hackathons = await this.page.evaluate(() => {
-        const tiles = document.querySelectorAll('.hackathon-tile');
-        const results = [];
+      const title = await this.page.title();
+      const content = await this.page.content();
+      const $ = cheerio.load(content);
+      
+      console.log(`[Devpost] Page Title: ${title}`);
+      
+      const results = [];
+      const seenTitles = new Set();
+      
+      // Look for hackathon tiles or any h3/a with hackathon keywords
+      $('.hackathon-tile, article, div[class*="HackathonTile"], h3').each((i, el) => {
+        const $el = $(el);
+        const titleEl = $el.find('h3, h4, a[href*="devpost.com/hackathons/"]').first();
+        const text = titleEl.text().trim() || $el.text().trim().split('\n')[0];
+        const href = titleEl.attr('href') || $el.find('a').attr('href');
         
-        tiles.forEach((tile, index) => {
-          if (index >= 10) return; // Limit to 10 results
-          
-          const titleElement = tile.querySelector('.hackathon-tile-header h3 a');
-          const organizerElement = tile.querySelector('.hackathon-tile-organizer');
-          const prizeElement = tile.querySelector('.prize-amount');
-          const deadlineElement = tile.querySelector('.submission-period');
-          const locationElement = tile.querySelector('.hackathon-tile-location');
-          
-          if (titleElement) {
-            results.push({
-              title: titleElement.textContent.trim(),
-              organization: organizerElement ? organizerElement.textContent.trim() : 'Devpost',
-              url: titleElement.href,
-              prize: prizeElement ? prizeElement.textContent.trim() : null,
-              deadline: deadlineElement ? deadlineElement.textContent.trim() : null,
-              location: locationElement ? locationElement.textContent.trim() : 'Online',
-              description: `Hackathon hosted on Devpost: ${titleElement.textContent.trim()}`
-            });
+        if (text && text.length > 5 && !seenTitles.has(text) && !text.includes('Sign In')) {
+          seenTitles.add(text);
+          // Location extraction
+          let location = 'Online';
+          const locEl = $el.find('.location, .hackathon-location, span[class*="location"]').first();
+          if (locEl.length) {
+            location = locEl.text().trim();
+          } else if ($el.text().toLowerCase().includes('online')) {
+            location = 'Online';
           }
-        });
-        
-        return results;
+
+          results.push({
+            title: text,
+            organization: $el.find('.organizer, .hackathon-tile-organizer').text().trim() || 'Devpost',
+            url: href ? (href.startsWith('http') ? href : `https://${href}`) : this.baseUrl,
+            source: 'devpost',
+            prize: $el.find('.prize-amount, .prize').text().trim() || 'See details',
+            deadline: 'Ongoing',
+            location: location,
+            description: `Hackathon: ${text}`
+          });
+        }
       });
-      
-      console.log(`Found ${hackathons.length} hackathons on Devpost`);
-      return hackathons;
-      
+
+      console.log(`Found ${results.length} hackathons on Devpost (Parsed via Cheerio)`);
+      return results;
+
     } catch (error) {
       console.error('Devpost scraping error:', error.message);
       return [];

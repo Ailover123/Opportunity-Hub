@@ -1,4 +1,5 @@
 const puppeteer = require('puppeteer');
+const cheerio = require('cheerio');
 
 class KaggleScraper {
   constructor() {
@@ -10,62 +11,86 @@ class KaggleScraper {
   async init() {
     this.browser = await puppeteer.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+      args: [
+        '--no-sandbox', 
+        '--disable-setuid-sandbox', 
+        '--disable-dev-shm-usage',
+        '--disable-blink-features=AutomationControlled'
+      ]
     });
     this.page = await this.browser.newPage();
-    await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    // Modern User Agent
+    await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
+    
+    // Stealth: Hide Puppeteer
+    await this.page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+      window.chrome = { runtime: {} };
+      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+    });
   }
 
   async scrapeCompetitions() {
     try {
       if (!this.page) await this.init();
+ 
+      console.log(`[Kaggle] Navigating to: ${this.baseUrl} [V3-ACTIVE]`);
+      
+      // Randomize viewport to look less robotic
+      const width = 1200 + Math.floor(Math.random() * 200);
+      const height = 800 + Math.floor(Math.random() * 200);
+      await this.page.setViewport({ width, height });
 
-      console.log('Scraping Kaggle competitions...');
-      await this.page.goto(this.baseUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      // Randomized delay before navigation
+      await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
+      
+      await this.page.goto(this.baseUrl, { waitUntil: 'load', timeout: 60000 });
+      
+      // Simulate slight mouse movement
+      await this.page.mouse.move(100, 100);
+      await new Promise(r => setTimeout(r, 500));
+      await this.page.mouse.move(200, 300);
 
-      // Wait for competition cards to load
-      try {
-        await this.page.waitForSelector('.sc-kOHtZc, div[class*="CompetitionItem"]', { timeout: 15000 });
-      } catch (e) {
-        console.log("Kaggle selector timeout, attempting fallback scan...");
+      // Wait for any content to appear
+      await new Promise(r => setTimeout(r, 7000));
+      
+      const title = await this.page.title();
+      const content = await this.page.content();
+      const $ = cheerio.load(content);
+      
+      console.log(`[Kaggle] Page Title: ${title}`);
+      if (title.includes('Access Denied') || title.includes('Cloudflare')) {
+        console.warn('[Kaggle] Bot detection triggered. Switching to emergency link scan...');
       }
 
-      const competitions = await this.page.evaluate(() => {
-        // Kaggle classes are obfuscated/dynamic (sc-xxxxx), use more generic structure if possible
-        // or look for specific text content indicators
-        const items = Array.from(document.querySelectorAll('li, div')).filter(el =>
-          el.innerText && el.innerText.includes('Prize') && el.innerText.includes('Teams')
-        );
+      const results = [];
+      const seenTitles = new Set();
 
-        const results = [];
-
-        // Deduplicate
-        const uniqueItems = items.slice(0, 10);
-
-        uniqueItems.forEach((item) => {
-          // Heuristic extraction
-          const lines = item.innerText.split('\n');
-          const title = lines[0];
-          if (title && title.length > 5) {
-            results.push({
-              title: title,
-              organization: 'Kaggle',
-              url: 'https://www.kaggle.com/competitions',
-              prize: 'See details',
-              deadline: 'See details',
-              location: 'Online',
-              description: 'Kaggle Competition',
-              status: 'verified',
-              quality_score: 85
-            });
-          }
-        });
-
-        return results;
+      // Look for titles in h3, h4 and links with competition patterns
+      $('h3, h4, a[href*="/c/"], a[href*="/competitions/"]').each((i, el) => {
+        const text = $(el).text().trim();
+        const href = $(el).attr('href');
+        
+        if (text && text.length > 8 && !seenTitles.has(text) && !['Competitions', 'Filters', 'Sort by', 'Sign In'].includes(text)) {
+          seenTitles.add(text);
+          results.push({
+            title: text,
+            organization: 'Kaggle',
+            url: href ? (href.startsWith('http') ? href : `https://www.kaggle.com${href}`) : this.baseUrl,
+            source: 'kaggle',
+            prize: 'Interactive',
+            deadline: 'Ongoing',
+            location: 'Online',
+            description: 'Kaggle Competition',
+            status: 'verified',
+            quality_score: 85
+          });
+        }
       });
 
-      console.log(`Found ${competitions.length} competitions on Kaggle`);
-      return competitions;
+      console.log(`Found ${results.length} competitions on Kaggle (Parsed via Cheerio)`);
+      return results;
 
     } catch (error) {
       console.error('Kaggle scraping error:', error.message);
